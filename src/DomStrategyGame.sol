@@ -207,14 +207,17 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     // Possible game moves
 
     function move(int8 direction, address player) public {
+        require(msg.sender == address(this), "Only via submit/reveal");
         // Change x & y depending on direction
     }
 
     function rest(address player) public {
+        require(msg.sender == address(this), "Only via submit/reveal");
         players[player].hp += 2;
     }
 
     function create(string calldata name, address player) public {
+        require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId == 0, "Already in alliance");
         uint256 allianceId = uint256(keccak256(abi.encodePacked(name)));
 
@@ -224,20 +227,13 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit AllianceCreated(player, allianceId, name);
     }
 
-    function leave(address player) public {
-        require(players[player].allianceId != 0, "Not in alliance");
-
-        uint256 allianceId = players[player].allianceId;
-        players[player].allianceId = 0;
-
-        emit AllianceMemberLeft(allianceId, player);
-    }
-
     function join(
         uint256 allianceId,
         bytes calldata signature,
         address player
     ) public {
+        require(msg.sender == address(this), "Only via submit/reveal");
+
         // Admin must sign the application off-chain. Applications are per-move based, so the player
         // can't reuse the application from the previous move
         bytes memory application = abi.encodePacked(currentTurn, allianceId);
@@ -248,6 +244,16 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         players[player].allianceId = allianceId;
 
         emit AllianceMemberJoined(players[player].allianceId, player);
+    }
+
+    function leave(address player) public {
+        require(msg.sender == address(this), "Only via submit/reveal");
+        require(players[player].allianceId != 0, "Not in alliance");
+
+        uint256 allianceId = players[player].allianceId;
+        players[player].allianceId = 0;
+
+        emit AllianceMemberLeft(allianceId, player);
     }
 
     // Callbacks
