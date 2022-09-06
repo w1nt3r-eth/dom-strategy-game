@@ -181,7 +181,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
             lastHash = currentHash;
 
             (bool success, bytes memory err) = address(this).call(
-                abi.encodePacked(player.pendingMove, addr)
+                abi.encodePacked(addr, player.pendingMove)
             );
 
             if (!success) {
@@ -206,7 +206,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
 
     // Possible game moves
 
-    function move(int8 direction, address player) public {
+    function move(address player, int8 direction) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         // Change x & y depending on direction
     }
@@ -216,7 +216,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         players[player].hp += 2;
     }
 
-    function create(string calldata name, address player) public {
+    function create(address player, string calldata name) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId == 0, "Already in alliance");
         uint256 allianceId = uint256(keccak256(abi.encodePacked(name)));
@@ -228,9 +228,9 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     }
 
     function join(
+        address player,
         uint256 allianceId,
-        bytes calldata signature,
-        address player
+        bytes calldata signature
     ) public {
         require(msg.sender == address(this), "Only via submit/reveal");
 
