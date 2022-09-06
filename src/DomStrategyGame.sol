@@ -27,6 +27,12 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     mapping(address => Player) players;
     mapping(uint256 => address) allianceAdmins;
 
+    // bring your own NFT kinda
+    // BAYC, Sappy Seal, Pudgy Penguins, Azuki, Doodles
+    address[] allowedNFTs = [
+        0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D, 0x364C828eE171616a39897688A831c2499aD972ec, 0xBd3531dA5CF5857e7CfAA92426877b022e612cf8, 0xED5AF388653567Af2F388E6224dC7C4b3241C544, 0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e
+    ];
+
     uint256 public currentTurn;
     uint256 public currentTurnStartTimestamp;
     uint256 public activePlayers;
@@ -79,6 +85,12 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         require(currentTurn == 0, "Already started");
         require(players[msg.sender].balance == 0, "Already joined");
         require(msg.value > 0, "Send some eth");
+
+        // prove ownership of one of the NFTs in the allowList
+
+        // otherwise you have to mint one of ours
+
+
 
         nft.safeTransferFrom(msg.sender, address(this), tokenId, "");
 
