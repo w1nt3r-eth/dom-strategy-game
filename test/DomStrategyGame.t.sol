@@ -2,17 +2,44 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
+
 import "../src/DomStrategyGame.sol";
+import "../src/Loot.sol";
+
+contract BAYC is ERC721 {
+    using Strings for uint256;
+
+    string baseURI;
+    
+    error NonExistentTokenUri();
+    constructor() ERC721("Bored Ape Yacht Club", "BAYC") {
+
+    }
+    function mint(address to, uint256 tokenId) external {
+        _mint(to, tokenId);
+    }
+
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        if (ownerOf(tokenId) == address(0)) {
+            revert NonExistentTokenUri();
+        }
+
+        return bytes(baseURI).length > 0 ? string(abi.encodePacked(baseURI, tokenId.toString())) : "";
+    }
+}
 
 contract DomStrategyGameTest is Test {
+    using stdStorage for StdStorage;
+
     DomStrategyGame public game;
     Loot public loot;
+    BAYC public bayc;
 
     address w1nt3r = 0x1E79b045Dc29eAe9fdc69673c9DCd7C53E5E159D;
     address dhof = 0xF296178d553C8Ec21A2fBD2c5dDa8CA9ac905A00;
 
     function setUp() public {
+        bayc = new BAYC();
         loot = new Loot();
         game = new DomStrategyGame(loot);
 
@@ -22,15 +49,17 @@ contract DomStrategyGameTest is Test {
 
     function testGame() public {
         vm.startPrank(w1nt3r);
+
         loot.mint(w1nt3r, 1);
         loot.setApprovalForAll(address(game), true);
-        game.connect{value: 1 ether}(1);
+        game.connect{value: 1 ether}(1, address(loot));
         vm.stopPrank();
 
         vm.startPrank(dhof);
-        loot.mint(dhof, 2);
-        loot.setApprovalForAll(address(game), true);
-        game.connect{value: 1 ether}(2);
+        
+        bayc.mint(dhof, 1);
+        bayc.setApprovalForAll(address(game), true);
+        game.connect{value: 1 ether}(1, address(bayc));
         vm.stopPrank();
 
         game.start();
@@ -49,8 +78,7 @@ contract DomStrategyGameTest is Test {
             DomStrategyGame.move.selector,
             uint8(3)
         );
-        vm.prank(dhof);
-        game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
+        vm.prank(dhof); game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
 
         vm.warp(block.timestamp + 19 hours);
 
@@ -59,13 +87,5 @@ contract DomStrategyGameTest is Test {
 
         vm.prank(dhof);
         game.reveal(turn, nonce2, call2);
-    }
-}
-
-contract Loot is ERC721 {
-    constructor() ERC721("Loot", "Loot") {}
-
-    function mint(address to, uint256 tokenId) external {
-        _mint(to, tokenId);
     }
 }
