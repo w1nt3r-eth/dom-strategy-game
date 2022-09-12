@@ -29,6 +29,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     Loot public loot;
     mapping(address => Player) players;
     mapping(uint256 => address) allianceAdmins;
+    mapping(address => uint256) public spoils;
 
     // bring your own NFT kinda
     // BAYC, Sappy Seal, Pudgy Penguins, Azuki, Doodles
@@ -109,13 +110,13 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
             pendingMoveCommitment: bytes32(0),
             pendingMove: ""
         });
-
+        spoils[msg.sender] = msg.value;
         players[msg.sender] = player;
         activePlayers += 1;
 
         emit Joined(msg.sender);
     }
-
+    // TODO: Somebody needs to call this, maybe make this a Keeper managed Cron job?
     function start() external {
         require(currentTurn == 0, "Already started");
         require(activePlayers > 1, "No players");
@@ -230,7 +231,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         players[player].hp += 2;
     }
 
-    function create(address player, string calldata name) public {
+    function createAlliance(address player, string calldata name) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId == 0, "Already in alliance");
         uint256 allianceId = uint256(keccak256(abi.encodePacked(name)));
@@ -241,7 +242,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit AllianceCreated(player, allianceId, name);
     }
 
-    function join(
+    function joinAlliance(
         address player,
         uint256 allianceId,
         bytes calldata signature
@@ -260,7 +261,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit AllianceMemberJoined(players[player].allianceId, player);
     }
 
-    function leave(address player) public {
+    function leaveAlliance(address player) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId != 0, "Not in alliance");
 

@@ -44,10 +44,10 @@ contract DomStrategyGameTest is Test {
         game = new DomStrategyGame(loot);
 
         vm.deal(w1nt3r, 1 ether);
-        vm.deal(dhof, 1 ether);
+        vm.deal(dhof, 100 ether);
     }
 
-    function testGame() public {
+    function testJoinGame() public {
         vm.startPrank(w1nt3r);
 
         loot.mint(w1nt3r, 1);
@@ -59,9 +59,14 @@ contract DomStrategyGameTest is Test {
         
         bayc.mint(dhof, 1);
         bayc.setApprovalForAll(address(game), true);
-        game.connect{value: 1 ether}(1, address(bayc));
+        game.connect{value: 6.9 ether}(1, address(bayc));
         vm.stopPrank();
 
+        require(game.spoils(w1nt3r) > 0, "Cannot play with 0 spoils, pleb.");
+        require(game.spoils(dhof) > 0, "Cannot play with 0 spoils, pleb.");
+        require(address(game).balance == 7.9 ether, "Game contract should escrow all the spoils.");
+        
+        
         game.start();
 
         bytes32 nonce1 = hex"01";
@@ -72,14 +77,18 @@ contract DomStrategyGameTest is Test {
             DomStrategyGame.rest.selector
         );
         vm.prank(w1nt3r);
+
+        // To make a move, you submit a hash of the intended move with the current turn, a nonce, and a call to either move or rest. Everyone's move is collected and then revealed at once after 18 hours
         game.submit(1, keccak256(abi.encodePacked(turn, nonce1, call1)));
 
         bytes memory call2 = abi.encodeWithSelector(
             DomStrategyGame.move.selector,
             uint8(3)
         );
-        vm.prank(dhof); game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
+        vm.prank(dhof);
+        game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
 
+        // every 18 hours all players need to reveal their respective move for that turn.
         vm.warp(block.timestamp + 19 hours);
 
         vm.prank(w1nt3r);
