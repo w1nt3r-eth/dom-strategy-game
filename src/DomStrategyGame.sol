@@ -7,9 +7,12 @@ import "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 
+import "./Loot.sol";
+
 struct Player {
     // TODO: Pack this struct once we know all the fields
     address addr;
+    address nftAddress;
     uint256 balance;
     uint256 tokenId;
     uint256 lastMoveTimestamp;
@@ -23,9 +26,16 @@ struct Player {
 }
 
 contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
-    IERC721 public nft;
+    Loot public loot;
     mapping(address => Player) players;
     mapping(uint256 => address) allianceAdmins;
+    mapping(address => uint256) public spoils;
+
+    // bring your own NFT kinda
+    // BAYC, Sappy Seal, Pudgy Penguins, Azuki, Doodles
+    // address[] allowedNFTs = [
+    //     0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D, 0x364C828eE171616a39897688A831c2499aD972ec, 0xBd3531dA5CF5857e7CfAA92426877b022e612cf8, 0xED5AF388653567Af2F388E6224dC7C4b3241C544, 0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e
+    // ];
 
     uint256 public currentTurn;
     uint256 public currentTurnStartTimestamp;
@@ -67,23 +77,28 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         address indexed player
     );
 
-    constructor(IERC721 _nft)
+    constructor(Loot _loot)
         // TODO: Take Chainlink address in constructor
         VRFConsumerBaseV2(0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D)
     {
-        nft = _nft;
+        loot = _loot;
         fieldSize = 100;
     }
 
-    function connect(uint256 tokenId) external payable {
+    function connect(uint256 tokenId, address byoNft) external payable {
         require(currentTurn == 0, "Already started");
         require(players[msg.sender].balance == 0, "Already joined");
         require(msg.value > 0, "Send some eth");
 
-        nft.safeTransferFrom(msg.sender, address(this), tokenId, "");
+        // prove ownership of one of the NFTs in the allowList
+        uint256 nftBalance = IERC721(byoNft).balanceOf(msg.sender);
+        require(nftBalance > 0, "You dont own this NFT you liar");
+
+        IERC721(byoNft).safeTransferFrom(msg.sender, address(this), tokenId, "");
 
         Player memory player = Player({
             addr: msg.sender,
+            nftAddress: byoNft == address(0) ? address(loot) : byoNft,
             balance: msg.value,
             tokenId: tokenId,
             lastMoveTimestamp: block.timestamp,
@@ -95,13 +110,13 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
             pendingMoveCommitment: bytes32(0),
             pendingMove: ""
         });
-
+        spoils[msg.sender] = msg.value;
         players[msg.sender] = player;
         activePlayers += 1;
 
         emit Joined(msg.sender);
     }
-
+    // TODO: Somebody needs to call this, maybe make this a Keeper managed Cron job?
     function start() external {
         require(currentTurn == 0, "Already started");
         require(activePlayers > 1, "No players");
@@ -216,7 +231,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         players[player].hp += 2;
     }
 
-    function create(address player, string calldata name) public {
+    function createAlliance(address player, string calldata name) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId == 0, "Already in alliance");
         uint256 allianceId = uint256(keccak256(abi.encodePacked(name)));
@@ -227,7 +242,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit AllianceCreated(player, allianceId, name);
     }
 
-    function join(
+    function joinAlliance(
         address player,
         uint256 allianceId,
         bytes calldata signature
@@ -246,7 +261,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit AllianceMemberJoined(players[player].allianceId, player);
     }
 
-    function leave(address player) public {
+    function leaveAlliance(address player) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId != 0, "Not in alliance");
 
@@ -274,7 +289,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         uint256,
         bytes calldata
     ) external view returns (bytes4) {
-        require(msg.sender == address(nft));
+        // require(msg.sender == address(loot) || msg.sender == address(bayc));
         return IERC721Receiver.onERC721Received.selector;
     }
 }

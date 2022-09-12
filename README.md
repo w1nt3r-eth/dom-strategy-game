@@ -15,7 +15,7 @@ Made by [@w1nt3r_eth](https://twitter.com/w1nt3r_eth)
 - 1 NFT = 1 Player
 - Pay entry free to create player. Entry fee goes to the player's "spoils," and ETH Balance attached to your player. Game takes nothing.
 - If you defeat a player, you win all their accumulated spoils. If you are defeated, you lose all your spoils.
-- Spils cannot be withdrawn till end of game
+- Spoils cannot be withdrawn till end of game
 
 #### Turns
 
