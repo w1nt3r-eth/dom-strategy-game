@@ -6,7 +6,7 @@ import "forge-std/Test.sol";
 import "../src/DomStrategyGame.sol";
 import "../src/Loot.sol";
 
-contract BAYC is ERC721 {
+contract MockBAYC is ERC721 {
     using Strings for uint256;
 
     string baseURI;
@@ -33,13 +33,13 @@ contract DomStrategyGameTest is Test {
 
     DomStrategyGame public game;
     Loot public loot;
-    BAYC public bayc;
+    MockBAYC public bayc;
 
     address w1nt3r = 0x1E79b045Dc29eAe9fdc69673c9DCd7C53E5E159D;
     address dhof = 0xF296178d553C8Ec21A2fBD2c5dDa8CA9ac905A00;
 
     function setUp() public {
-        bayc = new BAYC();
+        bayc = new MockBAYC();
         loot = new Loot();
         game = new DomStrategyGame(loot);
 
