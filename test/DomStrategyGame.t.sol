@@ -3,6 +3,8 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 
+import "./mocks/MockVRFCoordinatorV2.sol";
+import "../script/HelperConfig.sol";
 import "../src/DomStrategyGame.sol";
 import "../src/Loot.sol";
 
@@ -38,16 +40,38 @@ contract DomStrategyGameTest is Test {
     address w1nt3r = 0x1E79b045Dc29eAe9fdc69673c9DCd7C53E5E159D;
     address dhof = 0xF296178d553C8Ec21A2fBD2c5dDa8CA9ac905A00;
 
+    HelperConfig helper = new HelperConfig();
+    MockVRFCoordinatorV2 vrfCoordinator;
+
     function setUp() public {
+        (
+            ,
+            ,
+            ,
+            address link,
+            ,
+            ,
+            ,
+            ,
+            bytes32 keyHash
+        ) = helper.activeNetworkConfig();
+
+        vrfCoordinator = new MockVRFCoordinatorV2();
+        uint64 subscriptionId = vrfCoordinator.createSubscription();
+        uint96 FUND_AMOUNT = 1000 ether;
+        vrfCoordinator.fundSubscription(subscriptionId, FUND_AMOUNT);
+
         bayc = new MockBAYC();
         loot = new Loot();
-        game = new DomStrategyGame(loot);
+        game = new DomStrategyGame(loot, address(vrfCoordinator), link, subscriptionId, keyHash);
+
+        vrfCoordinator.addConsumer(subscriptionId, address(game));
 
         vm.deal(w1nt3r, 1 ether);
         vm.deal(dhof, 100 ether);
     }
 
-    function testJoinGame() public {
+    function testGame() public {
         vm.startPrank(w1nt3r);
 
         loot.mint(w1nt3r, 1);
@@ -96,5 +120,18 @@ contract DomStrategyGameTest is Test {
 
         vm.prank(dhof);
         game.reveal(turn, nonce2, call2);
+        
+        // N.B. this should be done offchain IRL
+        address[] memory sortedAddrs = new address[](2);
+        sortedAddrs[0] = dhof;
+        sortedAddrs[1] = w1nt3r;
+
+        game.rollDice(turn);
+        vrfCoordinator.fulfillRandomWords(
+            game.vrf_requestId(),
+            address(game)
+        );
+        
+        game.resolve(turn, sortedAddrs);
     }
 }

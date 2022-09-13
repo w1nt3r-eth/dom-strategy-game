@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: CC0
 pragma solidity ^0.8.13;
 
+import "forge-std/console.sol";
 import "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import "openzeppelin-contracts/contracts/utils/cryptography/ECDSA.sol";
 import "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
+import "chainlink/v0.8/interfaces/LinkTokenInterface.sol";
 import "chainlink/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "chainlink/v0.8/VRFConsumerBaseV2.sol";
 
@@ -37,13 +39,23 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     //     0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D, 0x364C828eE171616a39897688A831c2499aD972ec, 0xBd3531dA5CF5857e7CfAA92426877b022e612cf8, 0xED5AF388653567Af2F388E6224dC7C4b3241C544, 0x8a90CAb2b38dba80c64b7734e58Ee1dB38B8992e
     // ];
 
+    VRFCoordinatorV2Interface immutable COORDINATOR;
+    LinkTokenInterface immutable LINKTOKEN;
+    address public vrf_owner;
+    uint64 public vrf_subscriptionId;
+    bytes32 immutable vrf_keyHash;
+    uint32 immutable vrf_callbackGasLimit = 2_500_000;
+    uint16 immutable vrf_requestConfirmations = 3;
+    uint32 immutable vrf_numWords = 3;
+    uint256 public randomness;
+    uint256 public vrf_requestId;
     uint256 public currentTurn;
     uint256 public currentTurnStartTimestamp;
     uint256 public activePlayers;
-    uint256 public randomness;
-    uint256 public randomnessRequestId;
     uint256 public fieldSize;
 
+    event ReturnedRandomness(uint256[] randomWords);
+    event Constructed(address owner, uint64 subscriptionId);
     event Joined(address indexed addr);
     event TurnStarted(uint256 indexed turn, uint256 timestamp);
     event Submitted(
@@ -76,13 +88,24 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         uint256 indexed allianceId,
         address indexed player
     );
+    event Log(address indexed addr);
 
-    constructor(Loot _loot)
-        // TODO: Take Chainlink address in constructor
-        VRFConsumerBaseV2(0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D)
+    constructor(
+        Loot _loot,
+        address _vrfCoordinator,
+        address _linkToken,
+        uint64 _subscriptionId,
+        bytes32 _keyHash) VRFConsumerBaseV2(_vrfCoordinator)
     {
         loot = _loot;
         fieldSize = 100;
+
+        // VRF
+        COORDINATOR = VRFCoordinatorV2Interface(_vrfCoordinator);
+        LINKTOKEN = LinkTokenInterface(_linkToken);
+        vrf_keyHash = _keyHash;
+        vrf_owner = msg.sender;
+        vrf_subscriptionId = _subscriptionId;
     }
 
     function connect(uint256 tokenId, address byoNft) external payable {
@@ -155,21 +178,14 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit Revealed(msg.sender, currentTurn, nonce, data);
     }
 
+    // who rolls the dice and when?
     function rollDice(uint256 turn) external {
         require(turn == currentTurn, "Stale tx");
         require(randomness == 0, "Already rolled");
-        require(randomnessRequestId == 0, "Already rolling");
-        require(block.timestamp > currentTurnStartTimestamp + 36 hours);
+        require(vrf_requestId == 0, "Already rolling");
+        // require(block.timestamp > currentTurnStartTimestamp + 36 hours);
 
-        randomnessRequestId = VRFCoordinatorV2Interface(
-            0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D
-        ).requestRandomWords(
-                0x79d3d8832d904592c0bf9818b621522c988bb8b0c05cdc3b15aea1b6e8db0c15,
-                1,
-                3,
-                40_000,
-                1
-            );
+        requestRandomWords();
     }
 
     // The turns are processed in random order. The contract offloads sorting the players
@@ -178,18 +194,20 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         require(turn == currentTurn, "Stale tx");
         require(randomness != 0, "Roll the die first");
         require(sortedAddrs.length == activePlayers, "Not enough players");
-        require(block.timestamp > currentTurnStartTimestamp + 36 hours);
+        // require(block.timestamp > currentTurnStartTimestamp + 36 hours);
 
         if (turn % 5 == 0) {
             fieldSize -= 1;
         }
 
         bytes32 lastHash = 0;
-        // TODO: this will exceed block gas limit eventually, need to split `resolve`
-        // in a way that it can be called incrementally
-        for (uint256 i; i < sortedAddrs.length; i++) {
+        // TODO: this will exceed block gas limit eventually, need to split `resolve` in a way that it can be called incrementally
+        for (uint256 i = 0; i < sortedAddrs.length; i++) {
             address addr = sortedAddrs[i];
+            console.log("addr: ", addr);
             Player storage player = players[addr];
+            console.log("player x: ", player.x);
+            console.log("player y: ", player.y);
 
             bytes32 currentHash = keccak256(abi.encodePacked(addr, randomness));
             require(currentHash > lastHash, "Not sorted");
@@ -201,6 +219,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
 
             if (!success) {
                 // Player submitted a bad move
+                // TODO: check underflow, kick if out of spoils
                 player.balance -= 0.05 ether;
                 emit BadMovePenalty(turn, addr, err);
             }
@@ -219,11 +238,30 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         emit TurnStarted(currentTurn, currentTurnStartTimestamp);
     }
 
-    // Possible game moves
+    /**
+        @param direction: 1=up, 2=down, 3=left, 4=right
+     */
 
     function move(address player, int8 direction) public {
         require(msg.sender == address(this), "Only via submit/reveal");
+        console.log("move().x", players[player].x);
+        console.log("move().y", players[player].y);
         // Change x & y depending on direction
+        if (direction == 1) { // up
+            require(players[player].y - 1 > 0, "Cannot move up past the edge.");
+            players[player].x -= 1;
+        } else if (direction == 2) { // down
+            require(players[player].y + 1 < fieldSize, "Cannot move down past the edge.");
+            players[player].x += 1;
+        } else if (direction == 3) { // left
+            require(players[player].x - 1 > 0, "Cannot move left past the edge.");
+            players[player].y -= 1;
+        } else if (direction == 4) { // right
+            require(players[player].x - 1 < fieldSize, "Cannot move right past the edge.");
+            players[player].y += 1;
+        }
+
+        players[player].pendingMove = "";
     }
 
     function rest(address player) public {
@@ -272,15 +310,43 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     }
 
     // Callbacks
-
     function fulfillRandomWords(uint256 requestId, uint256[] memory randomWords)
         internal
         override
     {
-        require(randomnessRequestId == requestId);
+        require(vrf_requestId == requestId);
 
         randomness = randomWords[0];
-        randomnessRequestId = 0;
+        vrf_requestId = 0;
+        emit ReturnedRandomness(randomWords);
+    }
+
+    /**
+    * @notice Requests randomness
+    * Assumes the subscription is funded sufficiently; "Words" refers to unit of data in Computer Science
+    */
+    function requestRandomWords() internal onlyOwner {
+        // Will revert if subscription is not set and funded.
+        vrf_requestId = COORDINATOR.requestRandomWords(
+        vrf_keyHash,
+        vrf_subscriptionId,
+        vrf_requestConfirmations,
+        vrf_callbackGasLimit,
+        vrf_numWords
+        );
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == vrf_owner);
+        _;
+    }
+
+    function setSubscriptionId(uint64 subId) public onlyOwner {
+        vrf_subscriptionId = subId;
+    }
+
+    function setOwner(address owner) public onlyOwner {
+        vrf_owner = owner;
     }
 
     function onERC721Received(
@@ -288,7 +354,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         address,
         uint256,
         bytes calldata
-    ) external view returns (bytes4) {
+    ) external pure returns (bytes4) {
         // require(msg.sender == address(loot) || msg.sender == address(bayc));
         return IERC721Receiver.onERC721Received.selector;
     }
