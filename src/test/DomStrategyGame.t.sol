@@ -3,8 +3,10 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 
-import "../src/DomStrategyGame.sol";
-import "../src/Loot.sol";
+import "./mocks/MockVRFCoordinatorV2.sol";
+import "../../script/HelperConfig.sol";
+import "../DomStrategyGame.sol";
+import "../Loot.sol";
 
 contract MockBAYC is ERC721 {
     using Strings for uint256;
@@ -38,16 +40,38 @@ contract DomStrategyGameTest is Test {
     address w1nt3r = 0x1E79b045Dc29eAe9fdc69673c9DCd7C53E5E159D;
     address dhof = 0xF296178d553C8Ec21A2fBD2c5dDa8CA9ac905A00;
 
+    HelperConfig helper = new HelperConfig();
+    MockVRFCoordinatorV2 vrfCoordinator;
+
     function setUp() public {
+        (
+            ,
+            ,
+            ,
+            address link,
+            ,
+            ,
+            ,
+            ,
+            bytes32 keyHash
+        ) = helper.activeNetworkConfig();
+
+        vrfCoordinator = new MockVRFCoordinatorV2();
+        uint64 subscriptionId = vrfCoordinator.createSubscription();
+        uint96 FUND_AMOUNT = 1000 ether;
+        vrfCoordinator.fundSubscription(subscriptionId, FUND_AMOUNT);
+
         bayc = new MockBAYC();
         loot = new Loot();
-        game = new DomStrategyGame(loot);
+        game = new DomStrategyGame(loot, address(vrfCoordinator), link, subscriptionId, keyHash);
+
+        vrfCoordinator.addConsumer(subscriptionId, address(game));
 
         vm.deal(w1nt3r, 1 ether);
         vm.deal(dhof, 100 ether);
     }
 
-    function testJoinGame() public {
+    function testGame() public {
         vm.startPrank(w1nt3r);
 
         loot.mint(w1nt3r, 1);
@@ -73,19 +97,20 @@ contract DomStrategyGameTest is Test {
         bytes32 nonce2 = hex"02";
         uint256 turn = 1;
 
-        bytes memory call1 = abi.encodeWithSelector(
-            DomStrategyGame.rest.selector
-        );
-        vm.prank(w1nt3r);
-
         // To make a move, you submit a hash of the intended move with the current turn, a nonce, and a call to either move or rest. Everyone's move is collected and then revealed at once after 18 hours
+        vm.prank(w1nt3r);
+        bytes memory call1 = abi.encodeWithSelector(
+            DomStrategyGame.rest.selector,
+            w1nt3r
+        );
         game.submit(1, keccak256(abi.encodePacked(turn, nonce1, call1)));
-
+        
+        vm.prank(dhof);
         bytes memory call2 = abi.encodeWithSelector(
             DomStrategyGame.move.selector,
-            uint8(3)
+            dhof,
+            int8(4)
         );
-        vm.prank(dhof);
         game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
 
         // every 18 hours all players need to reveal their respective move for that turn.
@@ -96,5 +121,27 @@ contract DomStrategyGameTest is Test {
 
         vm.prank(dhof);
         game.reveal(turn, nonce2, call2);
+        
+        // N.B. this should be done offchain IRL
+        address[] memory sortedAddrs = new address[](2);
+        sortedAddrs[0] = dhof;
+        sortedAddrs[1] = w1nt3r;
+
+        game.rollDice(turn);
+        vrfCoordinator.fulfillRandomWords(
+            game.vrf_requestId(),
+            address(game)
+        );
+        
+        game.resolve(turn, sortedAddrs);
+
+        (,,,,,,uint256 hp_w1nt3r,,uint256 x_w1nt3r,uint256 y_w1nt3r,bytes32 pendingMoveCommitment_w1nt3r,) = game.players(w1nt3r);
+        (,,,,,,uint256 hp_dhof,,uint256 x_dhof,uint256 y_dhof,bytes32 pendingMoveCommitment_dhof,) = game.players(dhof);
+
+        require(x_w1nt3r == 0 && y_w1nt3r == 0, "W1nt3r should have remained in place from rest()");
+        require(x_dhof == 1 && y_dhof == 0, "Dhof should have moved right one square from move(4)");
+        require(hp_dhof == 1000, "W1nt3r should have recovered 2 hp from rest()");
+        require(hp_w1nt3r == 1002, "Dhof should have same hp remaining as before from move()");
+        require(pendingMoveCommitment_dhof == "" && pendingMoveCommitment_w1nt3r == "", "Pending move commitment for both should be cleared after resolution.");
     }
 }
