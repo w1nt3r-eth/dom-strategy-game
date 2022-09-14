@@ -53,6 +53,9 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     uint256 public currentTurnStartTimestamp;
     uint256 public activePlayers;
     uint256 public fieldSize;
+    // TODO make random to prevent position sniping...?
+    uint256 public nextAvailableRow = 0;
+    uint256 public nextAvailableCol = 0;
 
     event ReturnedRandomness(uint256[] randomWords);
     event Constructed(address owner, uint64 subscriptionId);
@@ -130,14 +133,16 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
             allianceId: 0,
             hp: 1000,
             attack: 10,
-            x: 0,
-            y: 0,
+            x: nextAvailableCol,
+            y: nextAvailableRow,
             pendingMoveCommitment: bytes32(0),
             pendingMove: ""
         });
         spoils[msg.sender] = msg.value;
         players[msg.sender] = player;
         activePlayers += 1;
+        nextAvailableCol = (nextAvailableCol + 2) % fieldSize;
+        nextAvailableRow = nextAvailableCol == 0 ? nextAvailableRow + 1 : nextAvailableRow;
 
         emit Joined(msg.sender);
     }
@@ -199,7 +204,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         // require(block.timestamp > currentTurnStartTimestamp + 36 hours);
 
         if (turn % 5 == 0) {
-            fieldSize -= 1;
+            fieldSize -= 2;
         }
 
         bytes32 lastHash = 0;

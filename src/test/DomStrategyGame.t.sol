@@ -71,7 +71,7 @@ contract DomStrategyGameTest is Test {
         vm.deal(dhof, 100 ether);
     }
 
-    function testGame() public {
+    function connect() public {
         vm.startPrank(w1nt3r);
 
         loot.mint(w1nt3r, 1);
@@ -85,11 +85,22 @@ contract DomStrategyGameTest is Test {
         bayc.setApprovalForAll(address(game), true);
         game.connect{value: 6.9 ether}(1, address(bayc));
         vm.stopPrank();
+    }
+
+    function testConnect() public {
+        connect();
+        (,,,,,,,,uint256 x_w1nt3r,uint256 y_w1nt3r,,) = game.players(w1nt3r);
+        (,,,,,,,,uint256 x_dhof,uint256 y_dhof,,) = game.players(dhof);
 
         require(game.spoils(w1nt3r) > 0, "Cannot play with 0 spoils, pleb.");
         require(game.spoils(dhof) > 0, "Cannot play with 0 spoils, pleb.");
         require(address(game).balance == 7.9 ether, "Game contract should escrow all the spoils.");
-        
+        require(x_w1nt3r == 0 && y_w1nt3r == 0, "First connector should occupy (0, 0)");
+        require(x_dhof == 2 && y_dhof == 0, "Second connector should occupy (2, 0)");
+    }
+
+    function testGame() public {
+        connect();
         
         game.start();
 
@@ -139,7 +150,7 @@ contract DomStrategyGameTest is Test {
         (,,,,,,uint256 hp_dhof,,uint256 x_dhof,uint256 y_dhof,bytes32 pendingMoveCommitment_dhof,) = game.players(dhof);
 
         require(x_w1nt3r == 0 && y_w1nt3r == 0, "W1nt3r should have remained in place from rest()");
-        require(x_dhof == 1 && y_dhof == 0, "Dhof should have moved right one square from move(4)");
+        require(x_dhof == 3 && y_dhof == 0, "Dhof should have moved right one square from move(4)");
         require(hp_dhof == 1000, "W1nt3r should have recovered 2 hp from rest()");
         require(hp_w1nt3r == 1002, "Dhof should have same hp remaining as before from move()");
         require(pendingMoveCommitment_dhof == "" && pendingMoveCommitment_w1nt3r == "", "Pending move commitment for both should be cleared after resolution.");
