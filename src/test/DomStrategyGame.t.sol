@@ -135,11 +135,13 @@ contract DomStrategyGameTest is Test {
         
         game.resolve(turn, sortedAddrs);
 
-        (,,,,,,,,uint256 x,uint256 y,,) = game.players(dhof);
-        (,,,,,,uint256 hp,,uint256 x2,uint256 y2,,) = game.players(w1nt3r);
+        (,,,,,,uint256 hp_w1nt3r,,uint256 x_w1nt3r,uint256 y_w1nt3r,bytes32 pendingMoveCommitment_w1nt3r,) = game.players(w1nt3r);
+        (,,,,,,uint256 hp_dhof,,uint256 x_dhof,uint256 y_dhof,bytes32 pendingMoveCommitment_dhof,) = game.players(dhof);
 
-        require(x == 0 && y == 0, "Dhof should have remained in place from rest()");
-        require(x2 == 0 && y2 == 1, "W1nt3r should have moved right one square from move(4)");
-        require(hp == 12, "Dhof should have recovered 2 hp from rest()");
+        require(x_w1nt3r == 0 && y_w1nt3r == 0, "W1nt3r should have remained in place from rest()");
+        require(x_dhof == 1 && y_dhof == 0, "Dhof should have moved right one square from move(4)");
+        require(hp_dhof == 1000, "W1nt3r should have recovered 2 hp from rest()");
+        require(hp_w1nt3r == 1002, "Dhof should have same hp remaining as before from move()");
+        require(pendingMoveCommitment_dhof == "" && pendingMoveCommitment_w1nt3r == "", "Pending move commitment for both should be cleared after resolution.");
     }
 }

@@ -226,6 +226,9 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
                 // TODO: Check for underflow, emit event
                 player.hp -= 10;
             }
+
+            player.pendingMove = "";
+            player.pendingMoveCommitment = bytes32(0);
         }
 
         randomness = 0;
@@ -256,12 +259,9 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
             require(playa.x + 1 < fieldSize, "Cannot move right past the edge.");
             playa.x = playa.x + 1;
         }
-
-        playa.pendingMove = "";
     }
 
     function rest(address player) public {
-        console.log("rest() called by : ", msg.sender);
         require(msg.sender == address(this), "Only via submit/reveal");
         players[player].hp += 2;
     }
