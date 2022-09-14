@@ -29,7 +29,7 @@ struct Player {
 
 contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     Loot public loot;
-    mapping(address => Player) players;
+    mapping(address => Player) public players;
     mapping(uint256 => address) allianceAdmins;
     mapping(address => uint256) public spoils;
 
@@ -88,7 +88,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         uint256 indexed allianceId,
         address indexed player
     );
-    event Log(address indexed addr);
+    event Move(address indexed who, uint newX, uint newY);
 
     constructor(
         Loot _loot,
@@ -106,6 +106,8 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         vrf_keyHash = _keyHash;
         vrf_owner = msg.sender;
         vrf_subscriptionId = _subscriptionId;
+
+        emit Constructed(vrf_owner, vrf_subscriptionId);
     }
 
     function connect(uint256 tokenId, address byoNft) external payable {
@@ -204,18 +206,13 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         // TODO: this will exceed block gas limit eventually, need to split `resolve` in a way that it can be called incrementally
         for (uint256 i = 0; i < sortedAddrs.length; i++) {
             address addr = sortedAddrs[i];
-            console.log("addr: ", addr);
             Player storage player = players[addr];
-            console.log("player x: ", player.x);
-            console.log("player y: ", player.y);
 
             bytes32 currentHash = keccak256(abi.encodePacked(addr, randomness));
             require(currentHash > lastHash, "Not sorted");
             lastHash = currentHash;
 
-            (bool success, bytes memory err) = address(this).call(
-                abi.encodePacked(addr, player.pendingMove)
-            );
+            (bool success, bytes memory err) = address(this).call(player.pendingMove);
 
             if (!success) {
                 // Player submitted a bad move
@@ -244,27 +241,27 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
 
     function move(address player, int8 direction) public {
         require(msg.sender == address(this), "Only via submit/reveal");
-        console.log("move().x", players[player].x);
-        console.log("move().y", players[player].y);
+        Player storage playa = players[player];
         // Change x & y depending on direction
         if (direction == 1) { // up
-            require(players[player].y - 1 > 0, "Cannot move up past the edge.");
-            players[player].x -= 1;
+            require(playa.y - 1 > 0, "Cannot move up past the edge.");
+            playa.y = playa.y -  1;
         } else if (direction == 2) { // down
-            require(players[player].y + 1 < fieldSize, "Cannot move down past the edge.");
-            players[player].x += 1;
+            require(playa.y + 1 < fieldSize, "Cannot move down past the edge.");
+            playa.y = playa.y + 1;
         } else if (direction == 3) { // left
-            require(players[player].x - 1 > 0, "Cannot move left past the edge.");
-            players[player].y -= 1;
+            require(playa.x - 1 > 0, "Cannot move left past the edge.");
+            playa.x = playa.x - 1;
         } else if (direction == 4) { // right
-            require(players[player].x - 1 < fieldSize, "Cannot move right past the edge.");
-            players[player].y += 1;
+            require(playa.x + 1 < fieldSize, "Cannot move right past the edge.");
+            playa.x = playa.x + 1;
         }
 
-        players[player].pendingMove = "";
+        playa.pendingMove = "";
     }
 
     function rest(address player) public {
+        console.log("rest() called by : ", msg.sender);
         require(msg.sender == address(this), "Only via submit/reveal");
         players[player].hp += 2;
     }

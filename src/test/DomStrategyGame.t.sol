@@ -4,9 +4,9 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 
 import "./mocks/MockVRFCoordinatorV2.sol";
-import "../script/HelperConfig.sol";
-import "../src/DomStrategyGame.sol";
-import "../src/Loot.sol";
+import "../../script/HelperConfig.sol";
+import "../DomStrategyGame.sol";
+import "../Loot.sol";
 
 contract MockBAYC is ERC721 {
     using Strings for uint256;
@@ -97,19 +97,20 @@ contract DomStrategyGameTest is Test {
         bytes32 nonce2 = hex"02";
         uint256 turn = 1;
 
-        bytes memory call1 = abi.encodeWithSelector(
-            DomStrategyGame.rest.selector
-        );
-        vm.prank(w1nt3r);
-
         // To make a move, you submit a hash of the intended move with the current turn, a nonce, and a call to either move or rest. Everyone's move is collected and then revealed at once after 18 hours
+        vm.prank(w1nt3r);
+        bytes memory call1 = abi.encodeWithSelector(
+            DomStrategyGame.rest.selector,
+            w1nt3r
+        );
         game.submit(1, keccak256(abi.encodePacked(turn, nonce1, call1)));
-
+        
+        vm.prank(dhof);
         bytes memory call2 = abi.encodeWithSelector(
             DomStrategyGame.move.selector,
-            uint8(3)
+            dhof,
+            int8(4)
         );
-        vm.prank(dhof);
         game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
 
         // every 18 hours all players need to reveal their respective move for that turn.
@@ -133,5 +134,12 @@ contract DomStrategyGameTest is Test {
         );
         
         game.resolve(turn, sortedAddrs);
+
+        (,,,,,,,,uint256 x,uint256 y,,) = game.players(dhof);
+        (,,,,,,uint256 hp,,uint256 x2,uint256 y2,,) = game.players(w1nt3r);
+
+        require(x == 0 && y == 0, "Dhof should have remained in place from rest()");
+        require(x2 == 0 && y2 == 1, "W1nt3r should have moved right one square from move(4)");
+        require(hp == 12, "Dhof should have recovered 2 hp from rest()");
     }
 }
