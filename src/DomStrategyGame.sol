@@ -27,9 +27,17 @@ struct Player {
     bytes pendingMove;
 }
 
+struct Alliance {
+    address admin;
+    uint256 id;
+    uint256 membersCount;
+    uint256 maxMembers;
+}
+
 contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     Loot public loot;
     mapping(address => Player) public players;
+    mapping(uint256 => Alliance) public alliances;
     mapping(uint256 => address) allianceAdmins;
     mapping(address => uint256) public spoils;
 
@@ -49,6 +57,7 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
     uint32 immutable vrf_numWords = 3;
     uint256 public randomness;
     uint256 public vrf_requestId;
+    uint256 nextAvailableAllianceId = 0;
     uint256 public currentTurn;
     uint256 public currentTurnStartTimestamp;
     uint256 public activePlayers;
@@ -271,15 +280,23 @@ contract DomStrategyGame is IERC721Receiver, VRFConsumerBaseV2 {
         players[player].hp += 2;
     }
 
-    function createAlliance(address player, string calldata name) public {
+    function createAlliance(address player, uint256 maxMembers, string calldata name) public {
         require(msg.sender == address(this), "Only via submit/reveal");
         require(players[player].allianceId == 0, "Already in alliance");
-        uint256 allianceId = uint256(keccak256(abi.encodePacked(name)));
 
-        players[player].allianceId = allianceId;
-        allianceAdmins[allianceId] = player;
+        players[player].allianceId = nextAvailableAllianceId;
+        allianceAdmins[nextAvailableAllianceId] = player;
 
-        emit AllianceCreated(player, allianceId, name);
+        Alliance memory newAlliance = Alliance({
+            admin: player,
+            id: nextAvailableAllianceId,
+            membersCount: 1,
+            maxMembers: maxMembers
+        });
+        alliances[nextAvailableAllianceId] = newAlliance;
+        nextAvailableAllianceId += 1;
+
+        emit AllianceCreated(player, nextAvailableAllianceId, name);
     }
 
     function joinAlliance(

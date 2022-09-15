@@ -40,6 +40,9 @@ contract DomStrategyGameTest is Test {
     address w1nt3r = 0x1E79b045Dc29eAe9fdc69673c9DCd7C53E5E159D;
     address dhof = 0xF296178d553C8Ec21A2fBD2c5dDa8CA9ac905A00;
 
+    // N.B. this should be done offchain IRL
+    address[] sortedAddrs = new address[](2);
+
     HelperConfig helper = new HelperConfig();
     MockVRFCoordinatorV2 vrfCoordinator;
 
@@ -69,6 +72,9 @@ contract DomStrategyGameTest is Test {
 
         vm.deal(w1nt3r, 1 ether);
         vm.deal(dhof, 100 ether);
+
+        sortedAddrs[0] = dhof;
+        sortedAddrs[1] = w1nt3r;
     }
 
     function connect() public {
@@ -114,7 +120,7 @@ contract DomStrategyGameTest is Test {
             DomStrategyGame.rest.selector,
             w1nt3r
         );
-        game.submit(1, keccak256(abi.encodePacked(turn, nonce1, call1)));
+        game.submit(turn, keccak256(abi.encodePacked(turn, nonce1, call1)));
         
         vm.prank(dhof);
         bytes memory call2 = abi.encodeWithSelector(
@@ -122,7 +128,7 @@ contract DomStrategyGameTest is Test {
             dhof,
             int8(4)
         );
-        game.submit(1, keccak256(abi.encodePacked(turn, nonce2, call2)));
+        game.submit(turn, keccak256(abi.encodePacked(turn, nonce2, call2)));
 
         // every 18 hours all players need to reveal their respective move for that turn.
         vm.warp(block.timestamp + 19 hours);
@@ -132,11 +138,6 @@ contract DomStrategyGameTest is Test {
 
         vm.prank(dhof);
         game.reveal(turn, nonce2, call2);
-        
-        // N.B. this should be done offchain IRL
-        address[] memory sortedAddrs = new address[](2);
-        sortedAddrs[0] = dhof;
-        sortedAddrs[1] = w1nt3r;
 
         game.rollDice(turn);
         vrfCoordinator.fulfillRandomWords(
@@ -154,5 +155,52 @@ contract DomStrategyGameTest is Test {
         require(hp_dhof == 1000, "W1nt3r should have recovered 2 hp from rest()");
         require(hp_w1nt3r == 1002, "Dhof should have same hp remaining as before from move()");
         require(pendingMoveCommitment_dhof == "" && pendingMoveCommitment_w1nt3r == "", "Pending move commitment for both should be cleared after resolution.");
+    }
+
+    function testAlliance() public {
+        connect();
+
+        uint256 turn = game.currentTurn() + 1;
+        bytes32 nonce1 = hex"01";
+        bytes32 nonce2 = hex"02";
+
+        game.start();
+
+        // dhof
+        vm.prank(dhof);
+
+        bytes memory createAllianceCall = abi.encodeWithSelector(DomStrategyGame.createAlliance.selector, dhof, 5, "The Dominators");
+
+        game.submit(turn, keccak256(abi.encodePacked(turn, nonce1, createAllianceCall)));
+
+        // w1nt3r
+        vm.prank(w1nt3r);
+        bytes memory restCall = abi.encodeWithSelector(DomStrategyGame.rest.selector, w1nt3r);
+        game.submit(turn, keccak256(abi.encodePacked(turn, nonce2, restCall)));
+
+        vm.warp(block.timestamp + 19 hours);
+
+        vm.prank(dhof);
+        game.reveal(turn, nonce1, createAllianceCall);
+
+        vm.prank(w1nt3r);
+        game.reveal(turn, nonce2, restCall);
+
+        game.rollDice(turn);
+        vrfCoordinator.fulfillRandomWords(
+            game.vrf_requestId(),
+            address(game)
+        );
+        
+        game.resolve(turn, sortedAddrs);
+
+        (address admin, uint256 allianceId, uint256 membersCount, uint256 maxMembersCount) = game.alliances(0);
+        (,,,,,uint256 allianceId_dhof,,,,,,) = game.players(dhof);
+
+        require(admin == dhof, "Dhof should be the alliance admin.");
+        require(allianceId == 0, "First alliance id should be 0");
+        require(membersCount == 1, "Admin should be the only initial member of alliance");
+        require(maxMembersCount == 5, "Max members count should be as specified by creator");
+        require(allianceId == allianceId_dhof, "Alliance Id should match in Player and Alliance structs (Foreign Key)");
     }
 }
